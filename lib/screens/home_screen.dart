@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/storage_service.dart';
+import '../widgets/glass_panel.dart';
 import 'attendance_screen.dart';
 import 'manage_roster_screen.dart';
 
@@ -455,46 +456,6 @@ class _RecentActivityPanel extends StatelessWidget {
       'December',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-}
-
-class GlassPanel extends StatelessWidget {
-  const GlassPanel({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-    super.key,
-  });
-
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = Theme.of(context).colorScheme.surface;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.72);
-    final shadowColor = isDark
-        ? Colors.black.withValues(alpha: 0.22)
-        : Colors.black.withValues(alpha: 0.05);
-
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: surface.withValues(alpha: isDark ? 0.72 : 0.82),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: shadowColor,
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: child,
-    );
   }
 }
 

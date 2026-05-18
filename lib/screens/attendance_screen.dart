@@ -39,15 +39,34 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     setState(() {
       if (savedStudents != null) {
-        students = savedStudents;
+        // Merge: start from saved data (preserves submitted status) then fill
+        // in any roster students that were added after this record was saved.
+        final savedIds = savedStudents.map((s) => s.id).toSet();
+        final merged = List<Student>.from(savedStudents);
+        for (final s in masterRoster) {
+          if (!savedIds.contains(s.id)) {
+            merged.add(Student(
+              id: s.id,
+              name: s.name,
+              rollNumber: s.rollNumber,
+              isPresent: true,
+              isLate: false,
+            ));
+          }
+        }
+        merged.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+        students = merged;
       } else {
-        students = masterRoster.map((student) => Student(
-          id: student.id,
-          name: student.name,
-          rollNumber: student.rollNumber,
-          isPresent: true,
-          isLate: false,
-        )).toList();
+        students = masterRoster
+            .map((s) => Student(
+                  id: s.id,
+                  name: s.name,
+                  rollNumber: s.rollNumber,
+                  isPresent: true,
+                  isLate: false,
+                ))
+            .toList()
+          ..sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
       }
       isLoading = false;
       _hasUnsavedChanges = false;
