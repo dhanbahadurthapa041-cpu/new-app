@@ -15,6 +15,8 @@ class AttendanceApp extends StatelessWidget {
       title: 'Attendance App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const HomeScreen(),
     );
   }

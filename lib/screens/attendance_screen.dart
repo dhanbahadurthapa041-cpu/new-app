@@ -145,6 +145,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Color statusColor(Student student) {
+      if (!student.isPresent) {
+        return Theme.of(context).colorScheme.error;
+      }
+      if (student.isLate) {
+        return Theme.of(context).colorScheme.secondary;
+      }
+      return Theme.of(context).colorScheme.primary;
+    }
+
     return PopScope(
       canPop: !_hasUnsavedChanges,
       onPopInvokedWithResult: (didPop, result) {
@@ -179,19 +189,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       itemCount: students.length,
                       itemBuilder: (context, index) {
                         final student = students[index];
+                        final activeColor = statusColor(student);
                         return Card(
                           margin: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 8,
                           ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: activeColor.withValues(alpha: 0.28),
+                              width: 1.5,
+                            ),
+                          ),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.1),
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
+                              backgroundColor: activeColor.withValues(alpha: 0.12),
+                              foregroundColor: activeColor,
                               child: Text(student.rollNumber),
                             ),
                             title: Text(

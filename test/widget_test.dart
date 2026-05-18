@@ -9,10 +9,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const AttendanceApp());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Attendance Dashboard'), findsOneWidget);
-    expect(find.text('Welcome to the Attendance App'), findsOneWidget);
-    expect(find.text('Mark Attendance'), findsOneWidget);
+    expect(find.text('Shree Bhawani Academy'), findsOneWidget);
+    expect(find.text('Today\'s Attendance Rate'), findsOneWidget);
+    expect(find.text('Quick Metrics'), findsOneWidget);
+    expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('Start Today\'s Attendance'), findsOneWidget);
   });
 
   testWidgets('warns before switching dates with unsaved attendance', (
@@ -21,7 +24,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const AttendanceApp());
-    await tester.tap(find.text('Mark Attendance'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start Today\'s Attendance'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byType(Switch).first);
@@ -44,7 +48,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const AttendanceApp());
-    await tester.tap(find.text('Mark Attendance'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start Today\'s Attendance'));
     await tester.pumpAndSettle();
 
     expect(find.text('Daily Summary'), findsOneWidget);
@@ -64,7 +69,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const AttendanceApp());
-    await tester.tap(find.text('Mark Attendance'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start Today\'s Attendance'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byType(Switch).first);
