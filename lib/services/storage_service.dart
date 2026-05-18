@@ -1,16 +1,38 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/student_model.dart';
+import 'student_service.dart';
 
 class StorageService {
   static const String _attendanceKeyPrefix = 'attendance_data';
   static const String _legacyAttendanceKey = 'attendance_data';
+  static const String _rosterKey = 'student_roster';
 
   static String attendanceKeyForDate(DateTime date) {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final month = normalizedDate.month.toString().padLeft(2, '0');
     final day = normalizedDate.day.toString().padLeft(2, '0');
     return '${_attendanceKeyPrefix}_${normalizedDate.year}-$month-$day';
+  }
+
+  static Future<List<Student>> loadMasterRoster() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? encodedData = prefs.getString(_rosterKey);
+    if (encodedData != null) {
+      return _decodeStudents(encodedData);
+    }
+    // Fallback to dummy students if no roster saved yet
+    final dummies = StudentService.getDummyStudents();
+    await saveMasterRoster(dummies);
+    return dummies;
+  }
+
+  static Future<void> saveMasterRoster(List<Student> students) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encodedData = jsonEncode(
+      students.map((student) => student.toJson()).toList(),
+    );
+    await prefs.setString(_rosterKey, encodedData);
   }
 
   static Future<void> saveAttendance(
@@ -30,8 +52,13 @@ class StorageService {
         prefs.getString(attendanceKeyForDate(date)) ??
         (_isToday(date) ? prefs.getString(_legacyAttendanceKey) : null);
 
+    final masterRoster = await loadMasterRoster();
+    final masterIds = masterRoster.map((s) => s.id).toSet();
+
     if (encodedData != null) {
-      return _decodeStudents(encodedData);
+      final savedStudents = _decodeStudents(encodedData);
+      // Filter out students who are no longer in the master roster
+      return savedStudents.where((student) => masterIds.contains(student.id)).toList();
     }
     return null;
   }
@@ -41,6 +68,8 @@ class StorageService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final summaries = <AttendanceRegisterSummary>[];
+    final masterRoster = await loadMasterRoster();
+    final masterIds = masterRoster.map((s) => s.id).toSet();
 
     for (final key in prefs.getKeys()) {
       final date = _dateFromAttendanceKey(key);
@@ -50,7 +79,10 @@ class StorageService {
       if (encodedData == null) continue;
 
       final students = _decodeStudents(encodedData);
-      summaries.add(AttendanceRegisterSummary.fromStudents(date, students));
+      // Filter out students who are no longer in the master roster
+      final filteredStudents =
+          students.where((student) => masterIds.contains(student.id)).toList();
+      summaries.add(AttendanceRegisterSummary.fromStudents(date, filteredStudents));
     }
 
     summaries.sort((a, b) => b.date.compareTo(a.date));

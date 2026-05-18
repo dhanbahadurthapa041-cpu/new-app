@@ -80,4 +80,55 @@ void main() {
 
     expect(find.text('Discard unsaved changes?'), findsOneWidget);
   });
+
+  testWidgets('can add and remove students on the roster screen', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(const AttendanceApp());
+    await tester.pumpAndSettle();
+
+    // 1. Navigate to Manage Roster from Home Screen AppBar
+    await tester.tap(find.byIcon(Icons.people_outline));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Manage School Roster'), findsOneWidget);
+    expect(find.text('Aarav Sharma'), findsOneWidget);
+    expect(find.text('Bipasha Thapa'), findsOneWidget);
+
+    // 2. Open Add Student dialog
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Student'), findsNWidgets(2));
+
+    // 3. Fill details and submit
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Full Name'),
+      'Gaurav Karki',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Roll Number'),
+      '106',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    // 4. Verify Gaurav Karki is added
+    expect(find.text('Gaurav Karki'), findsOneWidget);
+    expect(find.text('Roll Number: 106'), findsOneWidget);
+
+    // 5. Remove the first student (Aarav Sharma, roll 101)
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+
+    // Confirm removal
+    expect(find.text('Remove Student?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+    await tester.pumpAndSettle();
+
+    // Verify Aarav Sharma is removed from screen
+    expect(find.text('Aarav Sharma'), findsNothing);
+  });
 }

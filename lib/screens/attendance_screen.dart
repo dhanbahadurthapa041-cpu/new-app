@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/student_model.dart';
-import '../services/student_service.dart';
 import '../services/storage_service.dart';
+import 'manage_roster_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -33,16 +33,54 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final savedStudents = await StorageService.loadAttendance(
       date: attendanceDate,
     );
+    final masterRoster = await StorageService.loadMasterRoster();
+
     if (!mounted) return;
 
     setState(() {
-      if (savedStudents != null && savedStudents.isNotEmpty) {
+      if (savedStudents != null) {
         students = savedStudents;
       } else {
-        students = StudentService.getDummyStudents();
+        students = masterRoster.map((student) => Student(
+          id: student.id,
+          name: student.name,
+          rollNumber: student.rollNumber,
+          isPresent: true,
+          isLate: false,
+        )).toList();
       }
       isLoading = false;
       _hasUnsavedChanges = false;
+    });
+  }
+
+  Future<void> _refreshRosterAfterManage() async {
+    final masterRoster = await StorageService.loadMasterRoster();
+    final masterIds = masterRoster.map((s) => s.id).toSet();
+
+    setState(() {
+      // 1. Filter out students who are no longer in the master roster
+      final currentList = students.where((s) => masterIds.contains(s.id)).toList();
+
+      // 2. Add any new students that are in the master roster but not in the current list
+      final currentIds = currentList.map((s) => s.id).toSet();
+      for (final s in masterRoster) {
+        if (!currentIds.contains(s.id)) {
+          currentList.add(Student(
+            id: s.id,
+            name: s.name,
+            rollNumber: s.rollNumber,
+            isPresent: true,
+            isLate: false,
+          ));
+        }
+      }
+
+      // Sort by roll number to keep list organized
+      currentList.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+      
+      students = currentList;
+      _hasUnsavedChanges = true; // Mark as unsaved because roster list was edited
     });
   }
 
@@ -162,7 +200,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _handleBlockedPop();
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Mark Attendance')),
+        appBar: AppBar(
+          title: const Text('Mark Attendance'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.people_outline),
+              tooltip: 'Manage Roster',
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ManageRosterScreen()),
+                );
+                await _refreshRosterAfterManage();
+              },
+            ),
+          ],
+        ),
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
             : Column(

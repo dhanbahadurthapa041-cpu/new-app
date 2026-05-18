@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/storage_service.dart';
-import '../services/student_service.dart';
 import 'attendance_screen.dart';
+import 'manage_roster_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,6 +15,7 @@ class _HomeScreenState extends State<HomeScreen> {
   AttendanceRegisterSummary? todaySummary;
   List<AttendanceRegisterSummary> recentSummaries = [];
   bool isLoading = true;
+  int _rosterCount = 0;
 
   @override
   void initState() {
@@ -26,10 +27,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final today = _dateOnly(DateTime.now());
     final savedStudents = await StorageService.loadAttendance(date: today);
     final summaries = await StorageService.loadRecentSummaries();
+    final roster = await StorageService.loadMasterRoster();
 
     if (!mounted) return;
 
     setState(() {
+      _rosterCount = roster.length;
       todaySummary = savedStudents == null
           ? null
           : AttendanceRegisterSummary.fromStudents(today, savedStudents);
@@ -53,12 +56,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rosterCount = StudentService.getDummyStudents().length;
     final summary =
         todaySummary ??
         AttendanceRegisterSummary(
           date: _dateOnly(DateTime.now()),
-          totalCount: rosterCount,
+          totalCount: _rosterCount,
           onTimeCount: 0,
           lateCount: 0,
           absentCount: 0,
@@ -78,6 +80,19 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(child: Text('Shree Bhawani Academy')),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'Manage Roster',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ManageRosterScreen()),
+              );
+              _loadDashboard();
+            },
+          ),
+        ],
       ),
       body: DecoratedBox(
         decoration: BoxDecoration(
