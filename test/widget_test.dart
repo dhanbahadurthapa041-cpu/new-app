@@ -3,8 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:attendance_app/main.dart';
+import 'package:attendance_app/services/storage_service.dart';
 
 void main() {
+  testWidgets('shows a dashboard loading state before local data resolves', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(const AttendanceApp());
+
+    expect(find.text('Preparing dashboard'), findsOneWidget);
+    expect(find.text('Loading roster and recent attendance'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Today\'s Attendance Rate'), findsOneWidget);
+  });
+
   testWidgets('shows the attendance dashboard', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
 
@@ -15,6 +31,24 @@ void main() {
     expect(find.text('Today\'s Attendance Rate'), findsOneWidget);
     expect(find.text('Quick Metrics'), findsOneWidget);
     expect(find.text('Recent Activity'), findsOneWidget);
+    expect(find.text('Start Today\'s Attendance'), findsOneWidget);
+  });
+
+  testWidgets('corrupt local storage does not block startup', (
+    WidgetTester tester,
+  ) async {
+    final todayKey = StorageService.attendanceKeyForDate(DateTime.now());
+    SharedPreferences.setMockInitialValues({
+      'student_roster': 'not-json',
+      todayKey: 'not-json',
+    });
+
+    await tester.pumpWidget(const AttendanceApp());
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Shree Bhawani Academy'), findsOneWidget);
+    expect(find.text('No attendance saved yet today'), findsOneWidget);
     expect(find.text('Start Today\'s Attendance'), findsOneWidget);
   });
 

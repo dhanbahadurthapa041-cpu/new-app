@@ -17,22 +17,12 @@ class StorageService {
 
   static Future<List<Student>> loadMasterRoster() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? encodedData = prefs.getString(_rosterKey);
-    if (encodedData != null) {
-      return _decodeStudents(encodedData);
-    }
-    // Fallback to dummy students if no roster saved yet
-    final dummies = StudentService.getDummyStudents();
-    await saveMasterRoster(dummies);
-    return dummies;
+    return _loadMasterRosterFromPrefs(prefs);
   }
 
   static Future<void> saveMasterRoster(List<Student> students) async {
     final prefs = await SharedPreferences.getInstance();
-    final String encodedData = jsonEncode(
-      students.map((student) => student.toJson()).toList(),
-    );
-    await prefs.setString(_rosterKey, encodedData);
+    await prefs.setString(_rosterKey, _encodeStudents(students));
   }
 
   static Future<void> saveAttendance(
@@ -40,25 +30,65 @@ class StorageService {
     required DateTime date,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final String encodedData = jsonEncode(
-      students.map((student) => student.toJson()).toList(),
+    await prefs.setString(
+      attendanceKeyForDate(date),
+      _encodeStudents(students),
     );
-    await prefs.setString(attendanceKeyForDate(date), encodedData);
   }
 
   static Future<List<Student>?> loadAttendance({required DateTime date}) async {
     final prefs = await SharedPreferences.getInstance();
+    final masterRoster = await _loadMasterRosterFromPrefs(prefs);
+    return _loadAttendanceFromPrefs(
+      prefs,
+      date: date,
+      masterRoster: masterRoster,
+    );
+  }
+
+  static Future<DashboardSnapshot> loadDashboardSnapshot({
+    DateTime? date,
+    int recentLimit = 3,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final dashboardDate = _dateOnly(date ?? DateTime.now());
+    final masterRoster = await _loadMasterRosterFromPrefs(prefs);
+    final savedStudents = _loadAttendanceFromPrefs(
+      prefs,
+      date: dashboardDate,
+      masterRoster: masterRoster,
+    );
+    final summaries = _loadRecentSummariesFromPrefs(
+      prefs,
+      masterRoster: masterRoster,
+      limit: recentLimit,
+    );
+
+    return DashboardSnapshot(
+      rosterCount: masterRoster.length,
+      todaySummary: savedStudents == null
+          ? null
+          : AttendanceRegisterSummary.fromStudents(
+              dashboardDate,
+              savedStudents,
+            ),
+      recentSummaries: summaries,
+    );
+  }
+
+  static List<Student>? _loadAttendanceFromPrefs(
+    SharedPreferences prefs, {
+    required DateTime date,
+    required List<Student> masterRoster,
+  }) {
     final String? encodedData =
         prefs.getString(attendanceKeyForDate(date)) ??
         (_isToday(date) ? prefs.getString(_legacyAttendanceKey) : null);
 
-    final masterRoster = await loadMasterRoster();
-    final masterIds = masterRoster.map((s) => s.id).toSet();
-
     if (encodedData != null) {
-      final savedStudents = _decodeStudents(encodedData);
-      // Filter out students who are no longer in the master roster
-      return savedStudents.where((student) => masterIds.contains(student.id)).toList();
+      final savedStudents = _tryDecodeStudents(encodedData);
+      if (savedStudents == null) return null;
+      return _mergeAttendanceWithRoster(savedStudents, masterRoster);
     }
     return null;
   }
@@ -67,8 +97,20 @@ class StorageService {
     int limit = 3,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final masterRoster = await _loadMasterRosterFromPrefs(prefs);
+    return _loadRecentSummariesFromPrefs(
+      prefs,
+      masterRoster: masterRoster,
+      limit: limit,
+    );
+  }
+
+  static List<AttendanceRegisterSummary> _loadRecentSummariesFromPrefs(
+    SharedPreferences prefs, {
+    required List<Student> masterRoster,
+    required int limit,
+  }) {
     final summaries = <AttendanceRegisterSummary>[];
-    final masterRoster = await loadMasterRoster();
     final masterIds = masterRoster.map((s) => s.id).toSet();
 
     for (final key in prefs.getKeys()) {
@@ -78,22 +120,72 @@ class StorageService {
       final encodedData = prefs.getString(key);
       if (encodedData == null) continue;
 
-      final students = _decodeStudents(encodedData);
-      // Filter out students who are no longer in the master roster
-      final filteredStudents =
-          students.where((student) => masterIds.contains(student.id)).toList();
-      summaries.add(AttendanceRegisterSummary.fromStudents(date, filteredStudents));
+      final students = _tryDecodeStudents(encodedData);
+      if (students == null) continue;
+
+      final filteredStudents = students
+          .where((student) => masterIds.contains(student.id))
+          .toList();
+      summaries.add(
+        AttendanceRegisterSummary.fromStudents(date, filteredStudents),
+      );
     }
 
     summaries.sort((a, b) => b.date.compareTo(a.date));
     return summaries.take(limit).toList();
   }
 
-  static List<Student> _decodeStudents(String encodedData) {
-    final List<dynamic> decodedData = jsonDecode(encodedData);
-    return decodedData
-        .map((item) => Student.fromJson(item as Map<String, dynamic>))
-        .toList();
+  static Future<List<Student>> _loadMasterRosterFromPrefs(
+    SharedPreferences prefs,
+  ) async {
+    final String? encodedData = prefs.getString(_rosterKey);
+    final savedRoster = encodedData == null
+        ? null
+        : _tryDecodeStudents(encodedData);
+    if (savedRoster != null) return savedRoster;
+
+    final defaultRoster = StudentService.getDummyStudents();
+    await prefs.setString(_rosterKey, _encodeStudents(defaultRoster));
+    return defaultRoster;
+  }
+
+  static List<Student> _mergeAttendanceWithRoster(
+    List<Student> savedStudents,
+    List<Student> masterRoster,
+  ) {
+    final savedById = {
+      for (final student in savedStudents) student.id: student,
+    };
+    return masterRoster.map((rosterStudent) {
+      final savedStudent = savedById[rosterStudent.id];
+      return Student(
+        id: rosterStudent.id,
+        name: rosterStudent.name,
+        rollNumber: rosterStudent.rollNumber,
+        isPresent: savedStudent?.isPresent ?? true,
+        isLate: savedStudent?.isLate ?? false,
+      );
+    }).toList();
+  }
+
+  static String _encodeStudents(List<Student> students) {
+    return jsonEncode(students.map((student) => student.toJson()).toList());
+  }
+
+  static List<Student>? _tryDecodeStudents(String encodedData) {
+    try {
+      final decodedData = jsonDecode(encodedData);
+      if (decodedData is! List) return null;
+
+      return decodedData
+          .whereType<Map<String, dynamic>>()
+          .map(Student.fromJson)
+          .toList();
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
   }
 
   static DateTime? _dateFromAttendanceKey(String key) {
@@ -117,6 +209,22 @@ class StorageService {
         date.month == now.month &&
         date.day == now.day;
   }
+
+  static DateTime _dateOnly(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+}
+
+class DashboardSnapshot {
+  const DashboardSnapshot({
+    required this.rosterCount,
+    required this.todaySummary,
+    required this.recentSummaries,
+  });
+
+  final int rosterCount;
+  final AttendanceRegisterSummary? todaySummary;
+  final List<AttendanceRegisterSummary> recentSummaries;
 }
 
 class AttendanceRegisterSummary {

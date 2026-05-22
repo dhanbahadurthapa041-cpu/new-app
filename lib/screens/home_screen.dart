@@ -25,19 +25,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadDashboard() async {
-    final today = _dateOnly(DateTime.now());
-    final savedStudents = await StorageService.loadAttendance(date: today);
-    final summaries = await StorageService.loadRecentSummaries();
-    final roster = await StorageService.loadMasterRoster();
+    if (!isLoading) {
+      setState(() {
+        isLoading = true;
+      });
+    }
+
+    final snapshot = await StorageService.loadDashboardSnapshot();
 
     if (!mounted) return;
 
     setState(() {
-      _rosterCount = roster.length;
-      todaySummary = savedStudents == null
-          ? null
-          : AttendanceRegisterSummary.fromStudents(today, savedStudents);
-      recentSummaries = summaries;
+      _rosterCount = snapshot.rosterCount;
+      todaySummary = snapshot.todaySummary;
+      recentSummaries = snapshot.recentSummaries;
       isLoading = false;
     });
   }
@@ -88,7 +89,9 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ManageRosterScreen()),
+                MaterialPageRoute(
+                  builder: (context) => const ManageRosterScreen(),
+                ),
               );
               _loadDashboard();
             },
@@ -104,33 +107,26 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: _loadDashboard,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-              children: [
-                _HeroPanel(onStart: _openAttendance),
-                const SizedBox(height: 16),
-                if (isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else ...[
-                  _AttendanceRatePanel(
-                    summary: summary,
-                    hasSavedAttendance: todaySummary != null,
+          child: isLoading
+              ? const _DashboardLoadingView()
+              : RefreshIndicator(
+                  onRefresh: _loadDashboard,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                    children: [
+                      _HeroPanel(onStart: _openAttendance),
+                      const SizedBox(height: 16),
+                      _AttendanceRatePanel(
+                        summary: summary,
+                        hasSavedAttendance: todaySummary != null,
+                      ),
+                      const SizedBox(height: 16),
+                      _QuickMetrics(summary: summary),
+                      const SizedBox(height: 16),
+                      _RecentActivityPanel(summaries: recentSummaries),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  _QuickMetrics(summary: summary),
-                  const SizedBox(height: 16),
-                  _RecentActivityPanel(summaries: recentSummaries),
-                ],
-              ],
-            ),
-          ),
+                ),
         ),
       ),
     );
@@ -141,6 +137,48 @@ class _HomeScreenState extends State<HomeScreen> {
     return isDark
         ? const [Color(0xFF0F172A), Color(0xFF111827), Color(0xFF0B1120)]
         : const [Color(0xFFF8FAFC), Color(0xFFEFF6FF), Color(0xFFF8FAFC)];
+  }
+}
+
+class _DashboardLoadingView extends StatelessWidget {
+  const _DashboardLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: GlassPanel(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 52,
+              width: 52,
+              child: CircularProgressIndicator(
+                strokeWidth: 5,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.14),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Preparing dashboard',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Loading roster and recent attendance',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -327,7 +365,8 @@ class _QuickMetrics extends StatelessWidget {
       children: [
         Text('Quick Metrics', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
-        IntrinsicHeight(
+        SizedBox(
+          height: 112,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
