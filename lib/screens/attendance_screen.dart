@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import '../models/student_model.dart';
 import '../services/storage_service.dart';
+import '../utils/sorting_utils.dart';
 import 'manage_roster_screen.dart';
 
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({super.key});
+  final String classId;
+  final DateTime? initialDate;
+
+  const AttendanceScreen({required this.classId, this.initialDate, super.key});
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -19,7 +23,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void initState() {
     super.initState();
-    selectedDate = _dateOnly(selectedDate);
+    selectedDate = _dateOnly(widget.initialDate ?? DateTime.now());
     _loadData();
   }
 
@@ -31,9 +35,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
 
     final savedStudents = await StorageService.loadAttendance(
+      widget.classId,
       date: attendanceDate,
     );
-    final masterRoster = await StorageService.loadMasterRoster();
+    final masterRoster = await StorageService.loadMasterRoster(widget.classId);
 
     if (!mounted) return;
 
@@ -45,28 +50,33 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         final merged = List<Student>.from(savedStudents);
         for (final s in masterRoster) {
           if (!savedIds.contains(s.id)) {
-            merged.add(Student(
-              id: s.id,
-              name: s.name,
-              rollNumber: s.rollNumber,
-              isPresent: true,
-              isLate: false,
-            ));
+            merged.add(
+              Student(
+                id: s.id,
+                name: s.name,
+                rollNumber: s.rollNumber,
+                isPresent: true,
+                isLate: false,
+              ),
+            );
           }
         }
-        merged.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+        merged.sort((a, b) => compareRollNumbers(a.rollNumber, b.rollNumber));
         students = merged;
       } else {
-        students = masterRoster
-            .map((s) => Student(
-                  id: s.id,
-                  name: s.name,
-                  rollNumber: s.rollNumber,
-                  isPresent: true,
-                  isLate: false,
-                ))
-            .toList()
-          ..sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+        students =
+            masterRoster
+                .map(
+                  (s) => Student(
+                    id: s.id,
+                    name: s.name,
+                    rollNumber: s.rollNumber,
+                    isPresent: true,
+                    isLate: false,
+                  ),
+                )
+                .toList()
+              ..sort((a, b) => compareRollNumbers(a.rollNumber, b.rollNumber));
       }
       isLoading = false;
       _hasUnsavedChanges = false;
@@ -74,37 +84,46 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _refreshRosterAfterManage() async {
-    final masterRoster = await StorageService.loadMasterRoster();
+    final masterRoster = await StorageService.loadMasterRoster(widget.classId);
     final masterIds = masterRoster.map((s) => s.id).toSet();
 
     setState(() {
       // 1. Filter out students who are no longer in the master roster
-      final currentList = students.where((s) => masterIds.contains(s.id)).toList();
+      final currentList = students
+          .where((s) => masterIds.contains(s.id))
+          .toList();
 
       // 2. Add any new students that are in the master roster but not in the current list
       final currentIds = currentList.map((s) => s.id).toSet();
       for (final s in masterRoster) {
         if (!currentIds.contains(s.id)) {
-          currentList.add(Student(
-            id: s.id,
-            name: s.name,
-            rollNumber: s.rollNumber,
-            isPresent: true,
-            isLate: false,
-          ));
+          currentList.add(
+            Student(
+              id: s.id,
+              name: s.name,
+              rollNumber: s.rollNumber,
+              isPresent: true,
+              isLate: false,
+            ),
+          );
         }
       }
 
       // Sort by roll number to keep list organized
-      currentList.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
-      
+      currentList.sort((a, b) => compareRollNumbers(a.rollNumber, b.rollNumber));
+
       students = currentList;
-      _hasUnsavedChanges = true; // Mark as unsaved because roster list was edited
+      _hasUnsavedChanges =
+          true; // Mark as unsaved because roster list was edited
     });
   }
 
   Future<void> _submitAttendance() async {
-    await StorageService.saveAttendance(students, date: selectedDate);
+    await StorageService.saveAttendance(
+      widget.classId,
+      students,
+      date: selectedDate,
+    );
     if (!mounted) return;
     setState(() {
       _hasUnsavedChanges = false;
@@ -228,7 +247,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               onPressed: () async {
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const ManageRosterScreen()),
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ManageRosterScreen(classId: widget.classId),
+                  ),
                 );
                 await _refreshRosterAfterManage();
               },
@@ -276,7 +298,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: activeColor.withValues(alpha: 0.12),
+                              backgroundColor: activeColor.withValues(
+                                alpha: 0.12,
+                              ),
                               foregroundColor: activeColor,
                               child: Text(student.rollNumber),
                             ),

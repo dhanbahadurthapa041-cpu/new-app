@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/student_model.dart';
 import '../services/storage_service.dart';
 import '../widgets/glass_panel.dart';
+import '../utils/sorting_utils.dart';
 
 class ManageRosterScreen extends StatefulWidget {
-  const ManageRosterScreen({super.key});
+  final String classId;
+
+  const ManageRosterScreen({required this.classId, super.key});
 
   @override
   State<ManageRosterScreen> createState() => _ManageRosterScreenState();
@@ -34,12 +37,12 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
     setState(() {
       isLoading = true;
     });
-    final loadedRoster = await StorageService.loadMasterRoster();
+    final loadedRoster = await StorageService.loadMasterRoster(widget.classId);
     if (!mounted) return;
     setState(() {
       roster = loadedRoster;
       // Sort by roll number for a neat structural listing
-      roster.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+      roster.sort((a, b) => compareRollNumbers(a.rollNumber, b.rollNumber));
       isLoading = false;
     });
   }
@@ -55,10 +58,10 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
 
     setState(() {
       roster.add(newStudent);
-      roster.sort((a, b) => a.rollNumber.compareTo(b.rollNumber));
+      roster.sort((a, b) => compareRollNumbers(a.rollNumber, b.rollNumber));
     });
 
-    await StorageService.saveMasterRoster(roster);
+    await StorageService.saveMasterRoster(widget.classId, roster);
 
     _nameController.clear();
     _rollController.clear();
@@ -105,7 +108,7 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
       roster.removeWhere((s) => s.id == student.id);
     });
 
-    await StorageService.saveMasterRoster(roster);
+    await StorageService.saveMasterRoster(widget.classId, roster);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -185,10 +188,7 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
               },
               child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: _addStudent,
-              child: const Text('Add'),
-            ),
+            FilledButton(onPressed: _addStudent, child: const Text('Add')),
           ],
         );
       },
@@ -205,9 +205,7 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Manage School Roster'),
-      ),
+      appBar: AppBar(title: const Text('Manage Class Roster')),
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -220,108 +218,97 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
           child: isLoading
               ? const Center(child: CircularProgressIndicator())
               : roster.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.group_off,
-                            size: 80,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.24),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No Students in Roster',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tap the "+" button below to add your first child.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
-                                      .withValues(alpha: 0.6),
-                                ),
-                          ),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.group_off,
+                        size: 80,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.24),
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Students in Roster',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      itemCount: roster.length,
-                      itemBuilder: (context, index) {
-                        final student = roster[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: GlassPanel(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.12),
-                                  foregroundColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  child: Text(
-                                    student.rollNumber,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tap the "+" button below to add your first student.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  itemCount: roster.length,
+                  itemBuilder: (context, index) {
+                    final student = roster[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: GlassPanel(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.12),
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
+                              child: Text(
+                                student.rollNumber,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        student.name,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyLarge
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Roll Number: ${student.rollNumber}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  color: Theme.of(context).colorScheme.error,
-                                  onPressed: () => _removeStudent(student),
-                                  tooltip: 'Remove Student',
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    student.name,
+                                    style: Theme.of(context).textTheme.bodyLarge
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Roll Number: ${student.rollNumber}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              color: Theme.of(context).colorScheme.error,
+                              onPressed: () => _removeStudent(student),
+                              tooltip: 'Remove Student',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

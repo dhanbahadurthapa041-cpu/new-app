@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../models/class_model.dart';
 import '../services/storage_service.dart';
 import '../widgets/glass_panel.dart';
 import 'attendance_screen.dart';
 import 'manage_roster_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({required this.onSetupRequired, super.key});
+
+  final VoidCallback onSetupRequired;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -17,6 +21,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<AttendanceRegisterSummary> recentSummaries = [];
   bool isLoading = true;
   int _rosterCount = 0;
+  String schoolName = '';
+  List<ClassModel> classes = [];
+  ClassModel? selectedClass;
 
   @override
   void initState() {
@@ -31,25 +38,282 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
 
-    final snapshot = await StorageService.loadDashboardSnapshot();
+    final data = await StorageService.loadDashboardData();
 
     if (!mounted) return;
 
     setState(() {
-      _rosterCount = snapshot.rosterCount;
-      todaySummary = snapshot.todaySummary;
-      recentSummaries = snapshot.recentSummaries;
+      schoolName = data.schoolName;
+      classes = data.classes;
+      _rosterCount = data.snapshot.rosterCount;
+      todaySummary = data.snapshot.todaySummary;
+      recentSummaries = data.snapshot.recentSummaries;
+
+      if (classes.isNotEmpty) {
+        selectedClass = classes.firstWhere(
+          (c) => c.id == data.selectedClassId,
+          orElse: () => classes.first,
+        );
+      } else {
+        selectedClass = null;
+      }
+
       isLoading = false;
     });
   }
 
-  Future<void> _openAttendance() async {
+  Future<void> _openAttendance({DateTime? date}) async {
+    if (selectedClass == null) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AttendanceScreen()),
+      MaterialPageRoute(
+        builder: (context) =>
+            AttendanceScreen(classId: selectedClass!.id, initialDate: date),
+      ),
     );
     if (!mounted) return;
     await _loadDashboard();
+  }
+
+  Future<void> _openSettings() async {
+    final shouldReturnToSetup = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
+    );
+    if (!mounted) return;
+    if (shouldReturnToSetup == true) {
+      widget.onSetupRequired();
+      return;
+    }
+    await _loadDashboard();
+  }
+
+  Future<void> _createNewClass() async {
+    final textController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create Class'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: textController,
+            decoration: const InputDecoration(
+              labelText: 'Class Name',
+              hintText: 'e.g. Grade 8, Class 3B',
+            ),
+            textCapitalization: TextCapitalization.words,
+            validator: (val) {
+              if (val == null || val.trim().isEmpty) {
+                return 'Please enter a name';
+              }
+              final nameExists = classes.any(
+                (c) => c.name.toLowerCase() == val.trim().toLowerCase(),
+              );
+              if (nameExists) {
+                return 'A class with this name already exists';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, textController.text.trim());
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    if (name == null || name.isEmpty) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    final newClass = await StorageService.createClass(name);
+    await StorageService.saveSelectedClassId(newClass.id);
+    await _loadDashboard();
+  }
+
+  Future<void> _deleteClass(ClassModel classModel) async {
+    if (classes.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot delete the last remaining class.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Class?'),
+        content: Text(
+          'Are you sure you want to delete "${classModel.name}"?\n\nThis will permanently delete the roster and all historical attendance registers for this class. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    await StorageService.deleteClass(classModel.id);
+    await _loadDashboard();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Class "${classModel.name}" deleted.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  void _showClassSelectionBottomSheet() async {
+    final counts = await StorageService.getClassStudentCounts();
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Select Class',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Theme.of(context).colorScheme.primary,
+                        tooltip: 'Add Class',
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await _createNewClass();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: classes.length,
+                      itemBuilder: (context, index) {
+                        final cls = classes[index];
+                        final isSelected = cls.id == selectedClass?.id;
+                        final count = counts[cls.id] ?? 0;
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: isSelected
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.12)
+                                : Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.08),
+                            foregroundColor: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurface,
+                            child: const Icon(Icons.class_outlined),
+                          ),
+                          title: Text(
+                            cls.name,
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text('$count students'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isSelected)
+                                Icon(
+                                  Icons.check_circle,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              if (classes.length > 1) ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline),
+                                  color: Theme.of(context).colorScheme.error,
+                                  onPressed: () async {
+                                    Navigator.pop(context);
+                                    await _deleteClass(cls);
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                          onTap: () async {
+                            Navigator.pop(context);
+                            if (!isSelected) {
+                              setState(() {
+                                isLoading = true;
+                              });
+                              await StorageService.saveSelectedClassId(cls.id);
+                              await _loadDashboard();
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   DateTime _dateOnly(DateTime date) {
@@ -70,31 +334,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(0xFF0D9488),
-              foregroundColor: Colors.white,
-              child: Icon(Icons.school, size: 18),
-            ),
-            SizedBox(width: 10),
-            Expanded(child: Text('Shree Bhawani Academy')),
-          ],
+        title: InkWell(
+          onTap: _showClassSelectionBottomSheet,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                schoolName.isEmpty ? 'Attendance' : schoolName,
+                style: const TextStyle(fontSize: 16),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    selectedClass?.name ?? 'Select Class',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, size: 16),
+                ],
+              ),
+            ],
+          ),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.people_outline),
             tooltip: 'Manage Roster',
             onPressed: () async {
+              if (selectedClass == null) return;
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const ManageRosterScreen(),
+                  builder: (context) =>
+                      ManageRosterScreen(classId: selectedClass!.id),
                 ),
               );
               _loadDashboard();
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: _openSettings,
           ),
         ],
       ),
@@ -114,7 +398,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                     children: [
-                      _HeroPanel(onStart: _openAttendance),
+                      _HeroPanel(
+                        schoolName: schoolName,
+                        onStart: () => _openAttendance(),
+                      ),
                       const SizedBox(height: 16),
                       _AttendanceRatePanel(
                         summary: summary,
@@ -123,7 +410,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 16),
                       _QuickMetrics(summary: summary),
                       const SizedBox(height: 16),
-                      _RecentActivityPanel(summaries: recentSummaries),
+                      _RecentActivityPanel(
+                        summaries: recentSummaries,
+                        onTapItem: (date) => _openAttendance(date: date),
+                      ),
                     ],
                   ),
                 ),
@@ -183,8 +473,9 @@ class _DashboardLoadingView extends StatelessWidget {
 }
 
 class _HeroPanel extends StatelessWidget {
-  const _HeroPanel({required this.onStart});
+  const _HeroPanel({required this.schoolName, required this.onStart});
 
+  final String schoolName;
   final VoidCallback onStart;
 
   @override
@@ -210,7 +501,7 @@ class _HeroPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Good day, Teacher',
+            'Ready for Attendance',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w900,
@@ -218,7 +509,7 @@ class _HeroPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Today\'s register is ready for Shree Bhawani Academy.',
+            'Today\'s register is ready for ${schoolName.isEmpty ? 'your school' : schoolName}.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.white.withValues(alpha: 0.88),
             ),
@@ -418,9 +709,13 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _RecentActivityPanel extends StatelessWidget {
-  const _RecentActivityPanel({required this.summaries});
+  const _RecentActivityPanel({
+    required this.summaries,
+    required this.onTapItem,
+  });
 
   final List<AttendanceRegisterSummary> summaries;
+  final ValueChanged<DateTime> onTapItem;
 
   @override
   Widget build(BuildContext context) {
@@ -441,36 +736,48 @@ class _RecentActivityPanel extends StatelessWidget {
           else
             ...summaries.map(
               (summary) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.12),
-                      foregroundColor: Theme.of(context).colorScheme.primary,
-                      child: const Icon(Icons.event_available, size: 18),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onTapItem(summary.date),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 4,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _formatDate(summary.date),
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.12),
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary,
+                          child: const Icon(Icons.event_available, size: 18),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _formatDate(summary.date),
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${summary.presentCount} present, ${summary.lateCount} late, ${summary.absentCount} absent',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${summary.presentCount} present, ${summary.lateCount} late, ${summary.absentCount} absent',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

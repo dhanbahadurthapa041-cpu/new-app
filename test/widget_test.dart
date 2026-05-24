@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,16 +6,87 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:attendance_app/main.dart';
 import 'package:attendance_app/services/storage_service.dart';
 
+final demoStudents = [
+  {
+    'id': '1',
+    'name': 'Aarav Sharma',
+    'rollNumber': '101',
+    'isPresent': true,
+    'isLate': false,
+  },
+  {
+    'id': '2',
+    'name': 'Bipasha Thapa',
+    'rollNumber': '102',
+    'isPresent': true,
+    'isLate': false,
+  },
+  {
+    'id': '3',
+    'name': 'Chirag Shrestha',
+    'rollNumber': '103',
+    'isPresent': true,
+    'isLate': false,
+  },
+  {
+    'id': '4',
+    'name': 'Diya Maharjan',
+    'rollNumber': '104',
+    'isPresent': true,
+    'isLate': false,
+  },
+  {
+    'id': '5',
+    'name': 'Elisha Gurung',
+    'rollNumber': '105',
+    'isPresent': true,
+    'isLate': false,
+  },
+];
+
+void setConfiguredPrefs() {
+  SharedPreferences.setMockInitialValues({
+    'school_name': 'Shree Bhawani Academy',
+    'classes_list': jsonEncode([
+      {'id': 'grade_10', 'name': 'Grade 10'},
+      {'id': 'grade_9', 'name': 'Grade 9'},
+    ]),
+    'selected_class_id': 'grade_10',
+    'roster_grade_10': jsonEncode(demoStudents),
+    'roster_grade_9': jsonEncode([
+      {
+        'id': 'g9_1',
+        'name': 'Kamal Thapa',
+        'rollNumber': '901',
+        'isPresent': true,
+        'isLate': false,
+      },
+    ]),
+  });
+}
+
 void main() {
-  testWidgets('shows a dashboard loading state before local data resolves', (
+  testWidgets('shows first-run setup when no local setup exists', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const AttendanceApp());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Preparing dashboard'), findsOneWidget);
-    expect(find.text('Loading roster and recent attendance'), findsOneWidget);
+    expect(find.text('Set Up Attendance'), findsOneWidget);
+    expect(find.text('School Name'), findsOneWidget);
+    expect(find.text('First Class'), findsOneWidget);
+  });
+
+  testWidgets('shows a dashboard loading state before local data resolves', (
+    WidgetTester tester,
+  ) async {
+    setConfiguredPrefs();
+
+    await tester.pumpWidget(const AttendanceApp());
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
     await tester.pumpAndSettle();
 
@@ -22,7 +94,7 @@ void main() {
   });
 
   testWidgets('shows the attendance dashboard', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({});
+    setConfiguredPrefs();
 
     await tester.pumpWidget(const AttendanceApp());
     await tester.pumpAndSettle();
@@ -37,7 +109,10 @@ void main() {
   testWidgets('corrupt local storage does not block startup', (
     WidgetTester tester,
   ) async {
-    final todayKey = StorageService.attendanceKeyForDate(DateTime.now());
+    final todayKey = StorageService.attendanceKeyForDate(
+      'default_class',
+      DateTime.now(),
+    );
     SharedPreferences.setMockInitialValues({
       'student_roster': 'not-json',
       todayKey: 'not-json',
@@ -47,7 +122,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Shree Bhawani Academy'), findsOneWidget);
+    expect(find.text('My School'), findsOneWidget);
     expect(find.text('No attendance saved yet today'), findsOneWidget);
     expect(find.text('Start Today\'s Attendance'), findsOneWidget);
   });
@@ -55,7 +130,7 @@ void main() {
   testWidgets('warns before switching dates with unsaved attendance', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    setConfiguredPrefs();
 
     await tester.pumpWidget(const AttendanceApp());
     await tester.pumpAndSettle();
@@ -79,7 +154,7 @@ void main() {
   testWidgets('marks a student late and updates the daily summary', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    setConfiguredPrefs();
 
     await tester.pumpWidget(const AttendanceApp());
     await tester.pumpAndSettle();
@@ -100,7 +175,7 @@ void main() {
   testWidgets('warns before leaving with unsaved attendance', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    setConfiguredPrefs();
 
     await tester.pumpWidget(const AttendanceApp());
     await tester.pumpAndSettle();
@@ -118,7 +193,7 @@ void main() {
   testWidgets('can add and remove students on the roster screen', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    setConfiguredPrefs();
 
     await tester.pumpWidget(const AttendanceApp());
     await tester.pumpAndSettle();
@@ -127,7 +202,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.people_outline));
     await tester.pumpAndSettle();
 
-    expect(find.text('Manage School Roster'), findsOneWidget);
+    expect(find.text('Manage Class Roster'), findsOneWidget);
     expect(find.text('Aarav Sharma'), findsOneWidget);
     expect(find.text('Bipasha Thapa'), findsOneWidget);
 
@@ -165,4 +240,107 @@ void main() {
     // Verify Aarav Sharma is removed from screen
     expect(find.text('Aarav Sharma'), findsNothing);
   });
+
+  testWidgets('can switch classes and load different rosters/dashboards', (
+    WidgetTester tester,
+  ) async {
+    setConfiguredPrefs();
+
+    await tester.pumpWidget(const AttendanceApp());
+    await tester.pumpAndSettle();
+
+    // 1. Initially Grade 10 is active
+    expect(find.text('Grade 10'), findsOneWidget);
+
+    // 2. Open the bottom sheet class selection by tapping the class dropdown
+    await tester.tap(find.text('Grade 10'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Class'), findsOneWidget);
+    expect(find.text('Grade 9'), findsOneWidget);
+
+    // 3. Tap on Grade 9 in the bottom sheet list
+    await tester.tap(find.text('Grade 9').last);
+    await tester.pumpAndSettle();
+
+    // 4. Verify class has switched to Grade 9
+    expect(find.text('Grade 9'), findsOneWidget);
+    expect(find.text('Grade 10'), findsNothing);
+  });
+
+  testWidgets(
+    'tapping recent activity navigates to historical attendance screen',
+    (WidgetTester tester) async {
+      final pastDate = DateTime.now().subtract(const Duration(days: 2));
+      final pastKey = StorageService.attendanceKeyForDate('grade_10', pastDate);
+
+      final months = [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+      final formattedPastDate =
+          '${months[pastDate.month - 1]} ${pastDate.day}, ${pastDate.year}';
+
+      final mockStudents = [
+        {
+          'id': '1',
+          'name': 'Aarav Sharma',
+          'rollNumber': '101',
+          'isPresent': true,
+          'isLate': false,
+        },
+        {
+          'id': '2',
+          'name': 'Bipasha Thapa',
+          'rollNumber': '102',
+          'isPresent': false,
+          'isLate': false,
+        },
+      ];
+
+      SharedPreferences.setMockInitialValues({
+        'school_name': 'Shree Bhawani Academy',
+        'classes_list': jsonEncode([
+          {'id': 'grade_10', 'name': 'Grade 10'},
+        ]),
+        'selected_class_id': 'grade_10',
+        'roster_grade_10': jsonEncode(mockStudents),
+        pastKey: jsonEncode(mockStudents),
+      });
+
+      await tester.pumpWidget(const AttendanceApp());
+      await tester.pumpAndSettle();
+
+      // Verify recent activity list shows the past date
+      expect(find.text(formattedPastDate), findsOneWidget);
+      expect(find.text('1 present, 0 late, 1 absent'), findsOneWidget);
+
+      // Tap the recent activity item
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.pumpAndSettle();
+      final itemFinder = find.text(formattedPastDate);
+      await tester.tap(itemFinder);
+      await tester.pumpAndSettle();
+
+      // Verify we navigated to the AttendanceScreen for the past date
+      expect(
+        find.widgetWithText(OutlinedButton, formattedPastDate),
+        findsOneWidget,
+      );
+
+      // Verify we can view this attendance
+      expect(find.text('Aarav Sharma'), findsOneWidget);
+      expect(find.text('Bipasha Thapa'), findsOneWidget);
+    },
+  );
 }
