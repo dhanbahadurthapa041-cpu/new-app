@@ -1,6 +1,6 @@
 {
-    "name": "attendance_app",
-    "short_name": "attendance_app",
+    "name": "Smart Attendance",
+    "short_name": "Smart Attendance",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
