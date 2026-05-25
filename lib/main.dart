@@ -7,11 +7,15 @@ import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await NotificationService.init();
-  } catch (e) {
-    debugPrint('Error initializing notifications: $e');
-  }
+  
+  // 1. Initialize synchronous storage caching on startup
+  await StorageService.init();
+
+  // 2. Initialize notifications in the background (non-blocking)
+  NotificationService.init().catchError((e) {
+    debugPrint('Failed to initialize notifications: $e');
+  });
+
   runApp(const AttendanceApp());
 }
 
@@ -49,6 +53,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
   }
 
   Future<void> _loadSetupState() async {
+    await StorageService.init();
     final hasCompletedSetup = await StorageService.hasCompletedSetup();
     if (!mounted) return;
     setState(() {

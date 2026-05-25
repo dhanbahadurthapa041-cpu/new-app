@@ -355,6 +355,7 @@ void main() {
   group('StorageService Export/Import tests', () {
     test('can export class data to JSON and import it back', () async {
       SharedPreferences.setMockInitialValues({});
+      await StorageService.init();
       
       // 1. Create a class
       final classModel = await StorageService.createClass('Grade 12');
@@ -423,6 +424,7 @@ void main() {
 
     test('can export class data to CSV format', () async {
       SharedPreferences.setMockInitialValues({});
+      await StorageService.init();
       
       final classModel = await StorageService.createClass('Grade 12');
       final classId = classModel.id;

@@ -12,6 +12,12 @@ class StorageService {
   static const String _selectedClassIdKey = 'selected_class_id';
   static const String _schoolNameKey = 'school_name';
 
+  static late SharedPreferences _prefs;
+
+  static Future<void> init() async {
+    _prefs = await SharedPreferences.getInstance();
+  }
+
   static String attendanceKeyForDate(String classId, DateTime date) {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final month = normalizedDate.month.toString().padLeft(2, '0');
@@ -24,7 +30,7 @@ class StorageService {
   }
 
   static Future<void> checkAndPerformMigration() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final classesJson = prefs.getString(_classesListKey);
 
     if (classesJson == null) {
@@ -62,7 +68,7 @@ class StorageService {
   }
 
   static Future<bool> hasCompletedSetup() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     var classesJson = prefs.getString(_classesListKey);
     if (classesJson == null) {
       await checkAndPerformMigration();
@@ -78,12 +84,12 @@ class StorageService {
   }
 
   static Future<String> loadSchoolName() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     return prefs.getString(_schoolNameKey) ?? '';
   }
 
   static Future<void> saveSchoolName(String name) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(_schoolNameKey, name.trim());
   }
 
@@ -96,7 +102,7 @@ class StorageService {
       id: 'class_${DateTime.now().millisecondsSinceEpoch}',
       name: className.trim(),
     );
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(_schoolNameKey, schoolName.trim());
     await prefs.setString(_classesListKey, jsonEncode([newClass.toJson()]));
     await prefs.setString(_selectedClassIdKey, newClass.id);
@@ -107,12 +113,12 @@ class StorageService {
   }
 
   static Future<void> clearAllAppData() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.clear();
   }
 
   static Future<List<ClassModel>> loadClasses() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     var classesJson = prefs.getString(_classesListKey);
     if (classesJson == null) {
       await checkAndPerformMigration();
@@ -144,7 +150,7 @@ class StorageService {
   }
 
   static Future<Map<String, int>> getClassStudentCounts() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final classes = await loadClasses();
     final counts = <String, int>{};
     for (final cls in classes) {
@@ -154,7 +160,7 @@ class StorageService {
   }
 
   static Future<void> saveClasses(List<ClassModel> classes) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(
       _classesListKey,
       jsonEncode(classes.map((c) => c.toJson()).toList()),
@@ -162,7 +168,7 @@ class StorageService {
   }
 
   static Future<String> getSelectedClassId() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     var id = prefs.getString(_selectedClassIdKey);
     if (id == null) {
       await checkAndPerformMigration();
@@ -172,7 +178,7 @@ class StorageService {
   }
 
   static Future<void> saveSelectedClassId(String id) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(_selectedClassIdKey, id);
   }
 
@@ -188,7 +194,7 @@ class StorageService {
   }
 
   static Future<void> deleteClass(String classId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final classes = await loadClasses();
     classes.removeWhere((c) => c.id == classId);
     await saveClasses(classes);
@@ -217,7 +223,7 @@ class StorageService {
   }
 
   static Future<List<Student>> loadMasterRoster(String classId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     return _loadMasterRosterFromPrefs(prefs, classId);
   }
 
@@ -225,7 +231,7 @@ class StorageService {
     String classId,
     List<Student> students,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(
       rosterKeyForClass(classId),
       _encodeStudents(students),
@@ -237,7 +243,7 @@ class StorageService {
     List<Student> students, {
     required DateTime date,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     await prefs.setString(
       attendanceKeyForDate(classId, date),
       _encodeStudents(students),
@@ -248,7 +254,7 @@ class StorageService {
     String classId, {
     required DateTime date,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final masterRoster = await _loadMasterRosterFromPrefs(prefs, classId);
     return _loadAttendanceFromPrefs(
       prefs,
@@ -263,7 +269,7 @@ class StorageService {
     DateTime? date,
     int recentLimit = 3,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final dashboardDate = _dateOnly(date ?? DateTime.now());
     final masterRoster = await _loadMasterRosterFromPrefs(prefs, classId);
     final savedStudents = _loadAttendanceFromPrefs(
@@ -292,7 +298,7 @@ class StorageService {
   }
 
   static Future<DashboardData> loadDashboardData({int recentLimit = 3}) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
 
     // 1. Load School Name
     final schoolName = prefs.getString(_schoolNameKey) ?? '';
@@ -389,7 +395,7 @@ class StorageService {
     String classId, {
     int limit = 3,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final masterRoster = await _loadMasterRosterFromPrefs(prefs, classId);
     return _loadRecentSummariesFromPrefs(
       prefs,
@@ -523,7 +529,7 @@ class StorageService {
   }
 
   static Future<Map<DateTime, List<Student>>> loadAllAttendanceRecords(String classId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final masterRoster = await _loadMasterRosterFromPrefs(prefs, classId);
     final records = <DateTime, List<Student>>{};
 
@@ -543,7 +549,7 @@ class StorageService {
   }
 
   static Future<Set<DateTime>> loadClassSavedDates(String classId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _prefs;
     final savedDates = <DateTime>{};
 
     for (final key in prefs.getKeys()) {
