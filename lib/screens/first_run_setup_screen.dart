@@ -243,7 +243,7 @@ class _FirstRunSetupScreenState extends State<FirstRunSetupScreen> {
                           ),
                           const SizedBox(height: 14),
                           DropdownButtonFormField<String>(
-                            value: _selectedClass,
+                            initialValue: _selectedClass,
                             decoration: const InputDecoration(
                               labelText: 'First Class',
                               prefixIcon: Icon(Icons.class_outlined),

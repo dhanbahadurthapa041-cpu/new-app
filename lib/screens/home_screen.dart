@@ -6,6 +6,8 @@ import '../widgets/glass_panel.dart';
 import 'attendance_screen.dart';
 import 'manage_roster_screen.dart';
 import 'settings_screen.dart';
+import 'analytics_screen.dart';
+import '../widgets/weekly_calendar_strip.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({required this.onSetupRequired, super.key});
@@ -361,6 +363,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.bar_chart_outlined),
+            tooltip: 'Analytics & Reports',
+            onPressed: () async {
+              if (selectedClass == null) return;
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AnalyticsScreen(
+                    classId: selectedClass!.id,
+                    className: selectedClass!.name,
+                  ),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.people_outline),
             tooltip: 'Manage Roster',
             onPressed: () async {
@@ -398,6 +417,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                     children: [
+                      if (selectedClass != null) ...[
+                        WeeklyCalendarStrip(
+                          classId: selectedClass!.id,
+                          selectedDate: DateTime.now(),
+                          onDateSelected: (date) => _openAttendance(date: date),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       _HeroPanel(
                         schoolName: schoolName,
                         onStart: () => _openAttendance(),

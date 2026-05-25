@@ -521,6 +521,189 @@ class StorageService {
   static DateTime _dateOnly(DateTime date) {
     return DateTime(date.year, date.month, date.day);
   }
+
+  static Future<Map<DateTime, List<Student>>> loadAllAttendanceRecords(String classId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final masterRoster = await _loadMasterRosterFromPrefs(prefs, classId);
+    final records = <DateTime, List<Student>>{};
+
+    for (final key in prefs.getKeys()) {
+      final date = _dateFromAttendanceKey(key, classId);
+      if (date != null) {
+        final encoded = prefs.getString(key);
+        if (encoded != null) {
+          final students = _tryDecodeStudents(encoded);
+          if (students != null) {
+            records[date] = _mergeAttendanceWithRoster(students, masterRoster);
+          }
+        }
+      }
+    }
+    return records;
+  }
+
+  static Future<Set<DateTime>> loadClassSavedDates(String classId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedDates = <DateTime>{};
+
+    for (final key in prefs.getKeys()) {
+      final date = _dateFromAttendanceKey(key, classId);
+      if (date != null) {
+        savedDates.add(date);
+      }
+    }
+    return savedDates;
+  }
+
+  static Future<String> exportClassToJson(String classId) async {
+    final classes = await loadClasses();
+    final cls = classes.firstWhere(
+      (c) => c.id == classId,
+      orElse: () => throw Exception('Class not found'),
+    );
+    final roster = await loadMasterRoster(classId);
+    final attendance = await loadAllAttendanceRecords(classId);
+
+    final exportData = {
+      'exportType': 'attendance_app_class_export',
+      'version': 1,
+      'class': {
+        'id': classId,
+        'name': cls.name,
+      },
+      'roster': roster.map((s) => s.toJson()).toList(),
+      'attendance': attendance.map((date, list) {
+        final dateStr = date.toIso8601String().substring(0, 10);
+        return MapEntry(
+          dateStr,
+          list.map((s) => {
+            'studentId': s.id,
+            'isPresent': s.isPresent,
+            'isLate': s.isLate,
+          }).toList(),
+        );
+      }),
+    };
+    return jsonEncode(exportData);
+  }
+
+  static Future<void> importClassFromJson(String jsonString) async {
+    final map = jsonDecode(jsonString);
+    if (map is! Map<String, dynamic> ||
+        map['exportType'] != 'attendance_app_class_export') {
+      throw const FormatException('Invalid import file format');
+    }
+
+    final classMap = map['class'] as Map<String, dynamic>;
+    final originalClassName = classMap['name'] as String;
+
+    // Resolve naming conflict
+    final classes = await loadClasses();
+    var uniqueName = originalClassName.trim();
+    int counter = 1;
+    while (classes.any((c) => c.name.toLowerCase() == uniqueName.toLowerCase())) {
+      uniqueName = '$originalClassName ($counter)';
+      counter++;
+    }
+
+    final newClass = await createClass(uniqueName);
+    final newClassId = newClass.id;
+
+    // Import roster
+    final rosterList = map['roster'] as List;
+    final List<Student> roster = rosterList.map((item) {
+      return Student.fromJson(item as Map<String, dynamic>);
+    }).toList();
+    await saveMasterRoster(newClassId, roster);
+
+    // Import attendance records
+    final attendanceMap = map['attendance'] as Map<String, dynamic>;
+    for (final entry in attendanceMap.entries) {
+      final dateParts = entry.key.split('-');
+      if (dateParts.length != 3) continue;
+      final year = int.tryParse(dateParts[0]);
+      final month = int.tryParse(dateParts[1]);
+      final day = int.tryParse(dateParts[2]);
+      if (year == null || month == null || day == null) continue;
+      final date = DateTime(year, month, day);
+
+      final recordsList = entry.value as List;
+      final records = recordsList.map((item) => item as Map<String, dynamic>).toList();
+
+      final List<Student> studentsForDate = roster.map((rosterStudent) {
+        final record = records.firstWhere(
+          (r) => r['studentId'] == rosterStudent.id,
+          orElse: () => <String, dynamic>{},
+        );
+        return Student(
+          id: rosterStudent.id,
+          name: rosterStudent.name,
+          rollNumber: rosterStudent.rollNumber,
+          isPresent: record['isPresent'] as bool? ?? true,
+          isLate: record['isLate'] as bool? ?? false,
+        );
+      }).toList();
+
+      await saveAttendance(newClassId, studentsForDate, date: date);
+    }
+  }
+
+  static Future<String> exportClassToCsv(String classId) async {
+    final classes = await loadClasses();
+    final cls = classes.firstWhere(
+      (c) => c.id == classId,
+      orElse: () => throw Exception('Class not found'),
+    );
+    final roster = await loadMasterRoster(classId);
+    final attendance = await loadAllAttendanceRecords(classId);
+
+    final sortedDates = attendance.keys.toList()..sort();
+
+    final List<List<String>> csvData = [];
+
+    // Header row
+    final List<String> header = ['Roll Number', 'Student Name'];
+    for (final date in sortedDates) {
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      header.add('${date.year}-$month-$day');
+    }
+    csvData.add(header);
+
+    // Student rows
+    for (final student in roster) {
+      final List<String> row = [student.rollNumber, student.name];
+      for (final date in sortedDates) {
+        final studentsOnDate = attendance[date];
+        if (studentsOnDate != null) {
+          final match = studentsOnDate.firstWhere(
+            (s) => s.id == student.id,
+            orElse: () => student,
+          );
+          if (match.isPresent) {
+            row.add(match.isLate ? 'Late' : 'Present');
+          } else {
+            row.add('Absent');
+          }
+        } else {
+          row.add('');
+        }
+      }
+      csvData.add(row);
+    }
+
+    final StringBuffer sb = StringBuffer();
+    for (final row in csvData) {
+      final escapedRow = row.map((cell) {
+        if (cell.contains(',') || cell.contains('"') || cell.contains('\n')) {
+          return '"${cell.replaceAll('"', '""')}"';
+        }
+        return cell;
+      }).join(',');
+      sb.writeln(escapedRow);
+    }
+    return sb.toString();
+  }
 }
 
 class DashboardSnapshot {

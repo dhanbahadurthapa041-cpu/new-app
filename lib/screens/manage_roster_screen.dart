@@ -3,6 +3,7 @@ import '../models/student_model.dart';
 import '../services/storage_service.dart';
 import '../widgets/glass_panel.dart';
 import '../utils/sorting_utils.dart';
+import 'student_history_screen.dart';
 
 class ManageRosterScreen extends StatefulWidget {
   final String classId;
@@ -259,51 +260,70 @@ class _ManageRosterScreenState extends State<ManageRosterScreen> {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: GlassPanel(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.12),
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.primary,
-                              child: Text(
-                                student.rollNumber,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                        padding: EdgeInsets.zero,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => StudentHistoryScreen(
+                                  classId: widget.classId,
+                                  studentId: student.id,
+                                  studentName: student.name,
+                                  rollNumber: student.rollNumber,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    student.name,
-                                    style: Theme.of(context).textTheme.bodyLarge
-                                        ?.copyWith(fontWeight: FontWeight.bold),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.12),
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
+                                  child: Text(
+                                    student.rollNumber,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Roll Number: ${student.rollNumber}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        student.name,
+                                        style: Theme.of(context).textTheme.bodyLarge
+                                            ?.copyWith(fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Roll Number: ${student.rollNumber}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline),
+                                  color: Theme.of(context).colorScheme.error,
+                                  onPressed: () => _removeStudent(student),
+                                  tooltip: 'Remove Student',
+                                ),
+                              ],
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              color: Theme.of(context).colorScheme.error,
-                              onPressed: () => _removeStudent(student),
-                              tooltip: 'Remove Student',
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     );

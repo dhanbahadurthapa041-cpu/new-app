@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'services/storage_service.dart';
+import 'services/notification_service.dart';
 import 'utils/app_theme.dart';
 import 'screens/first_run_setup_screen.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await NotificationService.init();
+  } catch (e) {
+    debugPrint('Error initializing notifications: $e');
+  }
   runApp(const AttendanceApp());
 }
 

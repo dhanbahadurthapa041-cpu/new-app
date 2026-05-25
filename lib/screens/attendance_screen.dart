@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/student_model.dart';
 import '../services/storage_service.dart';
 import '../utils/sorting_utils.dart';
@@ -20,11 +21,26 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _hasUnsavedChanges = false;
   DateTime selectedDate = DateTime.now();
 
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _filterStatus = 'All';
+
   @override
   void initState() {
     super.initState();
     selectedDate = _dateOnly(widget.initialDate ?? DateTime.now());
     _loadData();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.trim();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -219,6 +235,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  List<Student> get _filteredStudents {
+    var list = students;
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      list = list.where((s) =>
+        s.name.toLowerCase().contains(query) ||
+        s.rollNumber.toLowerCase().contains(query)
+      ).toList();
+    }
+    if (_filterStatus != 'All') {
+      if (_filterStatus == 'Present') {
+        list = list.where((s) => s.isPresent).toList();
+      } else if (_filterStatus == 'Late') {
+        list = list.where((s) => s.isPresent && s.isLate).toList();
+      } else if (_filterStatus == 'Absent') {
+        list = list.where((s) => !s.isPresent).toList();
+      }
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
     Color statusColor(Student student) {
@@ -278,11 +315,67 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                   ),
                   AttendanceSummary(students: students),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search by name or roll...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.16)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Row(
+                      children: ['All', 'Present', 'Late', 'Absent'].map((status) {
+                        final isSelected = _filterStatus == status;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ChoiceChip(
+                            label: Text(status),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(() {
+                                  _filterStatus = status;
+                                });
+                              }
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                   Expanded(
-                    child: ListView.builder(
-                      itemCount: students.length,
-                      itemBuilder: (context, index) {
-                        final student = students[index];
+                    child: _filteredStudents.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Text(
+                                'No students match your query/filter',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _filteredStudents.length,
+                            itemBuilder: (context, index) {
+                              final student = _filteredStudents[index];
                         final activeColor = statusColor(student);
                         return Card(
                           margin: const EdgeInsets.symmetric(
@@ -337,6 +430,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         value: false,
                                         enabled: student.isPresent,
                                         onChanged: (value) {
+                                          HapticFeedback.lightImpact();
                                           setState(() {
                                             student.isLate = value;
                                             _hasUnsavedChanges = true;
@@ -348,6 +442,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         value: true,
                                         enabled: student.isPresent,
                                         onChanged: (value) {
+                                          HapticFeedback.lightImpact();
                                           setState(() {
                                             student.isLate = value;
                                             _hasUnsavedChanges = true;
@@ -369,6 +464,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 context,
                               ).colorScheme.secondary,
                               onChanged: (value) {
+                                HapticFeedback.lightImpact();
                                 setState(() {
                                   student.isPresent = value;
                                   if (!value) {

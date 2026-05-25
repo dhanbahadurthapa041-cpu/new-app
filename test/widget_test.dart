@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:attendance_app/main.dart';
+import 'package:attendance_app/models/student_model.dart';
 import 'package:attendance_app/services/storage_service.dart';
 
 final demoStudents = [
@@ -102,8 +103,13 @@ void main() {
     expect(find.text('Shree Bhawani Academy'), findsOneWidget);
     expect(find.text('Today\'s Attendance Rate'), findsOneWidget);
     expect(find.text('Quick Metrics'), findsOneWidget);
-    expect(find.text('Recent Activity'), findsOneWidget);
     expect(find.text('Start Today\'s Attendance'), findsOneWidget);
+
+    // Scroll to bring Recent Activity into view
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recent Activity'), findsOneWidget);
   });
 
   testWidgets('corrupt local storage does not block startup', (
@@ -321,13 +327,15 @@ void main() {
       await tester.pumpWidget(const AttendanceApp());
       await tester.pumpAndSettle();
 
+      // Scroll to bring Recent Activity into view
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
+
       // Verify recent activity list shows the past date
       expect(find.text(formattedPastDate), findsOneWidget);
       expect(find.text('1 present, 0 late, 1 absent'), findsOneWidget);
 
       // Tap the recent activity item
-      await tester.drag(find.byType(ListView), const Offset(0, -300));
-      await tester.pumpAndSettle();
       final itemFinder = find.text(formattedPastDate);
       await tester.tap(itemFinder);
       await tester.pumpAndSettle();
@@ -343,4 +351,99 @@ void main() {
       expect(find.text('Bipasha Thapa'), findsOneWidget);
     },
   );
+
+  group('StorageService Export/Import tests', () {
+    test('can export class data to JSON and import it back', () async {
+      SharedPreferences.setMockInitialValues({});
+      
+      // 1. Create a class
+      final classModel = await StorageService.createClass('Grade 12');
+      final classId = classModel.id;
+
+      // 2. Set roster
+      final students = [
+        Student(id: 's1', name: 'John Doe', rollNumber: '1', isPresent: true, isLate: false),
+        Student(id: 's2', name: 'Jane Smith', rollNumber: '2', isPresent: true, isLate: false),
+      ];
+      await StorageService.saveMasterRoster(classId, students);
+
+      // 3. Save some attendance records
+      final date1 = DateTime(2026, 5, 23);
+      students[0].isPresent = true;
+      students[0].isLate = false;
+      students[1].isPresent = false;
+      students[1].isLate = false;
+      await StorageService.saveAttendance(classId, students, date: date1);
+
+      final date2 = DateTime(2026, 5, 24);
+      students[0].isPresent = true;
+      students[0].isLate = true;
+      students[1].isPresent = true;
+      students[1].isLate = false;
+      await StorageService.saveAttendance(classId, students, date: date2);
+
+      // 4. Export to JSON
+      final jsonString = await StorageService.exportClassToJson(classId);
+      expect(jsonString, contains('attendance_app_class_export'));
+      expect(jsonString, contains('Grade 12'));
+      expect(jsonString, contains('John Doe'));
+
+      // 5. Import back from JSON
+      await StorageService.importClassFromJson(jsonString);
+
+      // 6. Verify imported class exists (unique name conflict resolution will rename it to 'Grade 12 (1)')
+      final classes = await StorageService.loadClasses();
+      expect(classes.length, equals(2));
+      final importedClass = classes.firstWhere((c) => c.name == 'Grade 12 (1)');
+      final importedClassId = importedClass.id;
+
+      // 7. Verify roster
+      final importedRoster = await StorageService.loadMasterRoster(importedClassId);
+      expect(importedRoster.length, equals(2));
+      expect(importedRoster[0].name, equals('John Doe'));
+      expect(importedRoster[1].name, equals('Jane Smith'));
+
+      // 8. Verify attendance records
+      final records = await StorageService.loadAllAttendanceRecords(importedClassId);
+      expect(records.length, equals(2));
+
+      final importedDate1 = DateTime(2026, 5, 23);
+      final list1 = records[importedDate1]!;
+      expect(list1.firstWhere((s) => s.id == 's1').isPresent, isTrue);
+      expect(list1.firstWhere((s) => s.id == 's1').isLate, isFalse);
+      expect(list1.firstWhere((s) => s.id == 's2').isPresent, isFalse);
+
+      final importedDate2 = DateTime(2026, 5, 24);
+      final list2 = records[importedDate2]!;
+      expect(list2.firstWhere((s) => s.id == 's1').isPresent, isTrue);
+      expect(list2.firstWhere((s) => s.id == 's1').isLate, isTrue);
+      expect(list2.firstWhere((s) => s.id == 's2').isPresent, isTrue);
+      expect(list2.firstWhere((s) => s.id == 's2').isLate, isFalse);
+    });
+
+    test('can export class data to CSV format', () async {
+      SharedPreferences.setMockInitialValues({});
+      
+      final classModel = await StorageService.createClass('Grade 12');
+      final classId = classModel.id;
+
+      final students = [
+        Student(id: 's1', name: 'John Doe', rollNumber: '1', isPresent: true, isLate: false),
+        Student(id: 's2', name: 'Jane Smith', rollNumber: '2', isPresent: true, isLate: false),
+      ];
+      await StorageService.saveMasterRoster(classId, students);
+
+      final date1 = DateTime(2026, 5, 23);
+      students[0].isPresent = true;
+      students[0].isLate = false;
+      students[1].isPresent = false;
+      students[1].isLate = false;
+      await StorageService.saveAttendance(classId, students, date: date1);
+
+      final csvString = await StorageService.exportClassToCsv(classId);
+      expect(csvString, contains('Roll Number,Student Name,2026-05-23'));
+      expect(csvString, contains('1,John Doe,Present'));
+      expect(csvString, contains('2,Jane Smith,Absent'));
+    });
+  });
 }

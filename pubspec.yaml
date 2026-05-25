@@ -35,6 +35,9 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.5
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  file_picker: ^8.0.0
 
 dev_dependencies:
   flutter_test:
